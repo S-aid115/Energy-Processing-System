@@ -1,133 +1,295 @@
-# Energy Process - Sistema de Procesamiento de Energía
+# Energy Process
 
-### Configuración inicial
+## Initial Setup
 
-1. **Clonar el repositorio** 
+### 1. Clone the repository
+
 ```bash
-git clone 
-cd Energy_Process
+git clone <REPOSITORY_URL>
+cd Energy_process
 ```
 
-2. **Configurar variables de entorno**:
+### 2. Configure environment variables
 
+Create a `.env` file in the project root and configure the required environment variables.
 
-3. **Levantar todo con Docker (RECOMENDADO)**  
-   Con un solo comando se inician **Backend (Uvicorn)**, **Worker (Celery)** y **Frontend**, además de PostgreSQL y Redis. El backend espera a la base de datos, la inicializa con datos de prueba y arranca la API; el worker procesa los archivos en segundo plano.
+Make sure the Redis URL matches the way you are running the application:
+
+```env
+REDIS_URL=redis://localhost:6379/0
+```
+
+> **Note:** When running the application entirely with Docker, the Redis hostname may be `redis` instead of `localhost`, depending on the configuration in `docker-compose.yml`.
+
+---
+
+## 3. Run Everything with Docker (Recommended)
+
+The recommended way to run the entire application is using Docker Compose.
+
+With a single command, the following services are started:
+
+* Backend (FastAPI/Uvicorn)
+* Celery Worker
+* Frontend
+* PostgreSQL
+* Redis
+
+The backend waits for the database, initializes it with test data, and starts the API. The Celery worker processes files in the background.
 
 ```bash
 docker-compose up -d --build
 ```
 
-   **Servicios que se inician:**
-   | Servicio   | Contenedor       | Qué hace                          |
-   |-----------|------------------|-----------------------------------|
-   | Backend   | peajes_backend   | Uvicorn (API FastAPI en :8000)   |
-   | Worker    | peajes_worker    | Celery (procesamiento de archivos)|
-   | Frontend  | peajes_frontend  | React (app en :3000)             |
-   | PostgreSQL| peajes_postgres  | Base de datos (:5432)             |
-   | Redis     | peajes_redis     | Cola para Celery (:6379)         |
+### Services
 
-   Para que la subida y el procesamiento de archivos funcionen, deben estar en marcha tanto el **backend** (Uvicorn) como el **worker** (Celery); con `docker-compose up -d --build` ambos se levantan automáticamente.
+| Service    | Container         | Description                                     |
+| ---------- | ----------------- | ----------------------------------------------- |
+| Backend    | `peajes_backend`  | FastAPI API running with Uvicorn on port `8000` |
+| Worker     | `peajes_worker`   | Celery background worker for file processing    |
+| Frontend   | `peajes_frontend` | React application on port `3000`                |
+| PostgreSQL | `peajes_postgres` | PostgreSQL database on port `5432`              |
+| Redis      | `peajes_redis`    | Message broker for Celery on port `6379`        |
 
-### Ejecución Local (Front, Backend, Celery por separado)
+For file upload and background processing to work correctly, both the **Backend** and **Celery Worker** must be running. The command above starts both automatically.
 
-Si quieres levantar **frontend**, **backend (Uvicorn)** y **Celery** cada uno en su propia terminal (sin meterlos en Docker), haz lo siguiente.
+---
 
-**Paso 0 — Obligatorio:** Base de datos y Redis tienen que estar corriendo. Si hiciste `docker-compose down`, Redis y Postgres se apagaron; sin Redis, Celery dará *"Error 10061"* o *"connection refused"*. Levanta solo estos dos servicios:
+# Local Development
 
-```powershell
-# Desde la raíz del proyecto (Energy_process)
+## Run Frontend, Backend and Celery Separately
+
+If you want to run the **frontend**, **backend (Uvicorn)** and **Celery worker** separately without running the application services inside Docker, follow the steps below.
+
+### Step 0 — Required Services
+
+PostgreSQL and Redis must be running.
+
+If you previously executed:
+
+```bash
+docker-compose down
+```
+
+both PostgreSQL and Redis were stopped.
+
+Start only these two services:
+
+```bash
 docker-compose up -d postgres redis
 ```
 
-**Importante:** En `.env` debe estar `REDIS_URL=redis://localhost:6379/0` (no `redis://redis:6379/0`). El host `redis` solo existe dentro de Docker.
+### Important
 
-Luego abre **3 terminales** y ejecuta:
+When running the backend and Celery locally, make sure your `.env` file contains:
 
-| Terminal | Ubicación   | Comando |
-|----------|-------------|--------|
-| **1. Backend (Uvicorn)** | `./backend` | `.\venv\Scripts\Activate.ps1` luego `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000` |
-| **2. Celery**            | `./backend` | `.\venv\Scripts\Activate.ps1` luego `celery -A app.celery_app worker --loglevel=info -P solo` |
-| **3. Frontend**          | `./frontend`| `npm run dev` |
+```env
+REDIS_URL=redis://localhost:6379/0
+```
 
-**Ejemplo en PowerShell (orden recomendado):**
+The hostname `redis` is only available inside the Docker network.
+
+---
+
+## Run the Application
+
+Open **three terminals**.
+
+### Terminal 1 — Backend
+
+From the `backend` directory:
 
 ```powershell
-# Terminal 1 — Backend
 cd backend
 .\venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-# Terminal 2 — Celery (nueva ventana, misma carpeta backend)
+### Terminal 2 — Celery Worker
+
+Open a new terminal:
+
+```powershell
 cd backend
 .\venv\Scripts\Activate.ps1
 celery -A app.celery_app worker --loglevel=info -P solo
+```
 
-# Terminal 3 — Frontend
+### Terminal 3 — Frontend
+
+Open another terminal:
+
+```powershell
 cd frontend
 npm run dev
 ```
 
-Si Celery no conecta a Redis, comprueba que Postgres y Redis estén en marcha: `docker ps` y que aparezcan `peajes_postgres` y `peajes_redis`.
+---
 
-#### Solución de problemas: "Error 10061" o "Timeout connecting to Redis"
+## Troubleshooting
 
-- **Causa habitual:** Docker Desktop no está iniciado o no has levantado Redis.
-- **Pasos:**
-  1. Abre **Docker Desktop** y espera a que esté listo (icono en bandeja del sistema).
-  2. En la raíz del proyecto: `docker-compose up -d postgres redis`.
-  3. Comprueba con `docker ps` que existan los contenedores `peajes_redis` y `peajes_postgres` en estado "Up".
-  4. Desde `backend`: `python check_redis.py`. Si responde "OK", inicia Celery.
-- **Si no quieres usar Docker:** necesitas Redis instalado en Windows (por ejemplo [Memurai](https://www.memurai.com/), compatible con Redis). Instálalo, inicia el servicio y deja `REDIS_URL=redis://localhost:6379/0` en `.env`.
+### Error 10061 or Timeout Connecting to Redis
 
-#### Detalle por servicio
+A common cause is that Docker Desktop is not running or the Redis container has not been started.
 
-**Backend (Python)** — desde `./backend`:
+### Steps
+
+1. Start **Docker Desktop** and wait until it is ready.
+2. From the project root, start PostgreSQL and Redis:
+
+```bash
+docker-compose up -d postgres redis
+```
+
+3. Verify that the containers are running:
+
+```bash
+docker ps
+```
+
+You should see:
+
+```text
+peajes_redis
+peajes_postgres
+```
+
+with an `Up` status.
+
+4. From the `backend` directory, test the Redis connection:
+
+```bash
+python check_redis.py
+```
+
+If the command returns:
+
+```text
+OK
+```
+
+you can start the Celery worker.
+
+### If you do not want to use Docker for Redis
+
+You need to have Redis installed and running locally on Windows.
+
+For example, you can use [Memurai](https://www.memurai.com/).
+
+In this case, keep the following configuration in `.env`:
+
+```env
+REDIS_URL=redis://localhost:6379/0
+```
+
+---
+
+# Service Configuration
+
+## Backend — Python
+
+From the `backend` directory:
+
 ```powershell
 python -m venv venv
-.\venv\Scripts\Activate.ps1  # Windows
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Worker Celery** — desde `./backend` en otra terminal:
+## Celery Worker
+
+From the `backend` directory, open another terminal:
+
 ```powershell
 .\venv\Scripts\Activate.ps1
 celery -A app.celery_app worker --loglevel=info -P solo
 ```
 
-**Frontend (React)** — desde `./frontend`:
-```powershell
+## Frontend — React
+
+From the `frontend` directory:
+
+```bash
 npm install
 npm run dev
 ```
 
-### Inicialización de la Base de Datos
-Para crear las tablas y datos de prueba:
-```powershell
-# Vía Docker
-docker-compose exec backend python init_db.py
+---
 
-# Vía Local
+# Database Initialization
+
+To create the database tables and insert test data:
+
+### Using Docker
+
+```bash
+docker-compose exec backend python init_db.py
+```
+
+### Using Local Development
+
+From the `backend` directory:
+
+```bash
 python init_db.py
 ```
 
-### Acceso a los servicios
+---
 
-- **Frontend** (con Docker en puerto 3000, local en 5173): http://localhost:3000 o http://localhost:5173
-- **Backend API**: http://localhost:8000
-- **Documentación API (Swagger)**: http://localhost:8000/docs
-- **PostgreSQL**: localhost:5432
-- **Redis**: localhost:6379
+# Service Access
 
+Once the application is running, the services can be accessed at:
 
+| Service                   | URL / Address              |
+| ------------------------- | -------------------------- |
+| Frontend — Docker         | http://localhost:3000      |
+| Frontend — Local          | http://localhost:5173      |
+| Backend API               | http://localhost:8000      |
+| Swagger API Documentation | http://localhost:8000/docs |
+| PostgreSQL                | `localhost:5432`           |
+| Redis                     | `localhost:6379`           |
 
-PS C:\Users\Raul\Music\X\Energy_process> cd .\frontend\
-PS C:\Users\Raul\Music\X\Energy_process\frontend> npm run dev
+### Frontend
 
-(venv) PS C:\Users\Raul\Music\X\Energy_process\backend> .\venv\Scripts\Activate.ps1   
-(venv) PS C:\Users\Raul\Music\X\Energy_process\backend> uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 
+```text
+http://localhost:3000
+```
 
+or, when running locally:
 
-(venv) PS C:\Users\Raul\Music\X\Energy_process\backend> .\venv\Scripts\Activate.ps1   
-(venv) PS C:\Users\Raul\Music\X\Energy_pr   celery -A app.celery_app worker --loglevel=info -P solo
+```text
+http://localhost:5173
+```
+
+### Backend API
+
+```text
+http://localhost:8000
+```
+
+### Swagger Documentation
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+# Quick Start
+
+If you only want to run the complete application using Docker:
+
+```bash
+git clone <REPOSITORY_URL>
+cd Energy_process
+docker-compose up -d --build
+```
+
+Then access:
+
+```text
+Frontend: http://localhost:3000
+Backend:  http://localhost:8000
+Swagger:  http://localhost:8000/docs
+```
